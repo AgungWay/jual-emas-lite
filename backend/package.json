@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js"
+    "start": "node server.js",
+    "postinstall": "prisma skills sync || exit 0"
   },
   "repository": {
     "type": "git",
@@ -20,6 +21,7 @@
   },
   "homepage": "https://github.com/AgungWay/jual-emas-lite#readme",
   "dependencies": {
+    "@prisma/client": "^6.19.3",
     "bcrypt": "^6.0.0",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
@@ -27,5 +29,7 @@
     "pg": "^8.23.0",
     "zod": "^4.6.5"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "prisma": "^6.19.3"
+  }
 }
