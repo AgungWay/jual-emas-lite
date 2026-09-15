@@ -1,0 +1,12 @@
+require('dotenv').config()
+const express = require('express')
+const { Pool } = require('pg')
+const app = express()
+const pool = new Pool({ connectionString: process.env.DATABASE_URL })
+app.use(express.json())
+app.get('/health', (req,res) => res.json({status:'ok'}))
+app.get('/api/employees', async (req,res) => {
+  const {rows} = await pool.query('SELECT * FROM employees ORDER BY id')
+  res.json(rows)
+})
+app.listen(process.env.PORT, () => console.log('ok :'+process.env.PORT))
