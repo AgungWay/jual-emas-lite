@@ -16,9 +16,106 @@ model Employee {
   createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
   password  String?
 
+  transactions Transaction[]
+
   @@map("employees")
   @@index([role])
   @@index([createdAt])
   @@index([name])
   @@index([role, createdAt])
+}
+
+model Product {
+  id          Int      @id @default(autoincrement())
+  sku         String   @unique @db.VarChar(50) // kode unik: LM-1GR-001
+  name        String   @db.VarChar(150) // Emas Antam 1 Gram
+  description String?  @db.Text
+  category    String   @db.VarChar(50) // logam_mulia, perhiasan, koin
+  karat       Int      @default(24) // 24, 23, 22, 18
+  weightGrams Decimal  @db.Decimal(10, 2) // 1.00, 5.00, 10.00
+  purity      Decimal? @db.Decimal(5, 2) // 99.99%
+  price       Int // harga jual saat ini (rupiah) — snapshot, bukan per gram
+  stock       Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  items TransactionItem[]
+
+  @@map("products")
+  @@index([category])
+  @@index([isActive])
+  @@index([weightGrams])
+}
+
+model Customer {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(100)
+  email     String?  @unique @db.VarChar(100)
+  phone     String   @unique @db.VarChar(20)
+  nik       String?  @unique @db.VarChar(16) // KTP wajib untuk transaksi emas > threshold
+  address   String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  transactions Transaction[]
+
+  @@map("customers")
+  @@index([name])
+}
+
+model Transaction {
+  id           Int             @id @default(autoincrement())
+  invoiceNo    String          @unique @map("invoice_no") @db.VarChar(30) // INV-20260915-0001
+  type         TransactionType @default(SELL) // SELL = jual ke customer, BUY = buyback dari customer
+  status       TransactionStatus @default(COMPLETED)
+  customerId   Int?            @map("customer_id")
+  employeeId   Int             @map("employee_id")
+  totalWeight  Decimal         @db.Decimal(10, 2) @map("total_weight")
+  totalAmount  Int             @map("total_amount") // total rupiah
+  paidAmount   Int             @map("paid_amount")
+  notes        String?         @db.Text
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  items    TransactionItem[]
+
+  @@map("transactions")
+  @@index([customerId])
+  @@index([employeeId])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+  @@index([customerId, createdAt])
+}
+
+model TransactionItem {
+  id          Int     @id @default(autoincrement())
+  transactionId Int   @map("transaction_id")
+  productId   Int     @map("product_id")
+  quantity    Int     @default(1)
+  weightGrams Decimal @db.Decimal(10, 2) @map("weight_grams") // snapshot berat saat jual
+  priceAtSale Int     @map("price_at_sale") // snapshot harga per pcs saat transaksi
+  subtotal    Int // quantity * priceAtSale
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  product     Product     @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@map("transaction_items")
+  @@unique([transactionId, productId])
+  @@index([productId])
+  @@index([transactionId])
+}
+
+enum TransactionType {
+  SELL // toko jual emas ke customer
+  BUY // toko beli/buyback emas dari customer
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
 }

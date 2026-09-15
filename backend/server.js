@@ -158,6 +158,60 @@ app.post("/api/auth", async (req, res) => {
   });
 });
 
+// ── PRODUCTS (simple) ──
+app.get("/api/products", async (req, res) => {
+  const products = await prisma.product.findMany({ orderBy: { id: "asc" } });
+  res.json(products);
+});
+
+app.get("/api/products/:id", async (req, res) => {
+  const product = await prisma.product.findUnique({
+    where: { id: Number(req.params.id) },
+  });
+  if (!product) return res.status(404).json({ error: "product not found" });
+  res.json(product);
+});
+
+// ── CUSTOMERS (simple) ──
+app.get("/api/customers", async (req, res) => {
+  const customers = await prisma.customer.findMany({ orderBy: { id: "asc" } });
+  res.json(customers);
+});
+
+app.get("/api/customers/:id", async (req, res) => {
+  const customer = await prisma.customer.findUnique({
+    where: { id: Number(req.params.id) },
+  });
+  if (!customer) return res.status(404).json({ error: "customer not found" });
+  res.json(customer);
+});
+
+// ── TRANSACTIONS (simple) ──
+app.get("/api/transactions", async (req, res) => {
+  const transactions = await prisma.transaction.findMany({
+    orderBy: { id: "desc" },
+    include: {
+      customer: { select: { id: true, name: true, phone: true } },
+      employee: { select: { id: true, name: true, email: true } },
+      items: { include: { product: true } },
+    },
+  });
+  res.json(transactions);
+});
+
+app.get("/api/transactions/:id", async (req, res) => {
+  const tx = await prisma.transaction.findUnique({
+    where: { id: Number(req.params.id) },
+    include: {
+      customer: true,
+      employee: { select: { id: true, name: true, email: true } },
+      items: { include: { product: true } },
+    },
+  });
+  if (!tx) return res.status(404).json({ error: "transaction not found" });
+  res.json(tx);
+});
+
 app.listen(process.env.PORT, () => console.log("ok :" + process.env.PORT));
 
 // graceful shutdown prisma
