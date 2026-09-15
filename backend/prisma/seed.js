@@ -96,8 +96,10 @@ async function seedEmployees() {
 }
 
 async function seedProducts() {
-  console.log("Seeding products... (8 products)");
-  const products = [
+  // keep original 8 as base, auto-expand to 50 to prove anti N+1 & EXPLAIN <100ms
+  const TARGET_COUNT = 50;
+  console.log(`Seeding products... (target ${TARGET_COUNT} products)`);
+  const baseProducts = [
     {
       sku: "LM-ANTAM-1GR",
       name: "Logam Mulia Antam 1 Gram",
@@ -179,6 +181,24 @@ async function seedProducts() {
       stock: 30,
     },
   ];
+  // expand to 50: synth products GEN-XXX
+  const categories = ["logam_mulia", "perhiasan", "koin"];
+  const products = [...baseProducts];
+  for (let i = baseProducts.length + 1; i <= TARGET_COUNT; i++) {
+    const cat = categories[i % categories.length];
+    const grams = [0.5, 1, 2, 3, 5, 10, 25][i % 7];
+    const karat = [24, 22, 18][i % 3];
+    products.push({
+      sku: `GEN-PROD-${String(i).padStart(3, "0")}`,
+      name: `Produk Synth ${cat} ${grams}gr #${i}`,
+      category: cat,
+      karat,
+      weightGrams: grams,
+      purity: karat === 24 ? 99.99 : karat === 22 ? 91.6 : 75.0,
+      price: Math.round(grams * 1300000 + (i % 5) * 100000),
+      stock: 20 + (i % 30),
+    });
+  }
   // keep exactly 8: remove extra SKUs that exceed 8 if present in future runs
   const targetSkus = products.map((p) => p.sku);
   for (const p of products) {
@@ -231,8 +251,9 @@ async function seedProducts() {
 }
 
 async function seedCustomers() {
-  console.log("Seeding customers... (10 customers)");
-  const customers = [
+  const TARGET_COUNT = 50;
+  console.log(`Seeding customers... (target ${TARGET_COUNT} customers)`);
+  const baseCustomers = [
     {
       name: "Budi Santoso",
       phone: "081111111111",
@@ -304,6 +325,17 @@ async function seedCustomers() {
       address: "Jl. Kebon Jeruk No.88 Jakarta Barat",
     },
   ];
+  const customers = [...baseCustomers];
+  for (let i = baseCustomers.length + 1; i <= TARGET_COUNT; i++) {
+    const suffix = String(i).padStart(2, "0");
+    customers.push({
+      name: `Customer Synth ${i}`,
+      phone: `0821${String(10000000 + i).padStart(8, "0")}`,
+      email: `synth${i}@test.com`,
+      nik: `3201${String(200000000000 + i).padStart(12, "0")}`,
+      address: `Jl. Synth No.${i} Jakarta`,
+    });
+  }
   for (const c of customers) {
     const cust = await prisma.customer.upsert({
       where: { phone: c.phone },
@@ -316,17 +348,30 @@ async function seedCustomers() {
 }
 
 async function seedTransactions() {
-  console.log("Seeding transactions...");
+  const TARGET_COUNT = 50;
+  console.log(`Seeding transactions... (target ${TARGET_COUNT})`);
   const employees = await prisma.employee.findMany({ select: { id: true } });
   const customers = await prisma.customer.findMany({ select: { id: true } });
   const products = await prisma.product.findMany();
   if (!products.length || !employees.length || !customers.length)
     throw new Error("seed products/customers/employees first");
 
-  const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  let seq = (await prisma.transaction.count()) + 1;
+  const currentCount = await prisma.transaction.count();
+  if (currentCount >= TARGET_COUNT) {
+    console.log(`  skip: already ${currentCount} >= ${TARGET_COUNT}`);
+    console.log(
+      `  transactions: ${currentCount}, items: ${await prisma.transactionItem.count()}`,
+    );
+    return;
+  }
+  const needed = TARGET_COUNT - currentCount;
+  console.log(`  current ${currentCount}, need ${needed} more`);
 
-  const txTemplates = [
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  let seq = currentCount + 1;
+
+  // 8 base templates + random synth for remaining 42
+  const baseTemplates = [
     { type: "SELL", items: ["LM-ANTAM-1GR", "LM-ANTAM-5GR"] },
     { type: "SELL", items: ["PH-CINCIN-3GR"] },
     {
@@ -340,8 +385,25 @@ async function seedTransactions() {
     { type: "SELL", items: ["KOIN-DINAR-4.25GR", "KOIN-DINAR-4.25GR"] },
   ];
 
-  for (let i = 0; i < txTemplates.length; i++) {
-    const t = txTemplates[i];
+  // helper random
+  function pickRandom(arr, n) {
+    const copy = [...arr];
+    const out = [];
+    for (let i = 0; i < n; i++)
+      out.push(copy[Math.floor(Math.random() * copy.length)]);
+    return out;
+  }
+
+  for (let i = 0; i < needed; i++) {
+    let template;
+    if (i < baseTemplates.length) {
+      template = baseTemplates[i];
+    } else {
+      // synth: 1-3 random products
+      const n = 1 + Math.floor(Math.random() * 3);
+      const skus = pickRandom(products, n).map((p) => p.sku);
+      template = { type: Math.random() > 0.3 ? "SELL" : "BUY", items: skus };
+    }
     const invoiceNo = `INV-${today}-${String(seq++).padStart(4, "0")}`;
     const exists = await prisma.transaction.findUnique({
       where: { invoiceNo },
@@ -350,11 +412,12 @@ async function seedTransactions() {
       console.log(`  skip exists ${invoiceNo}`);
       continue;
     }
-    const employeeId = employees[i % employees.length].id;
-    const customerId = customers[i % customers.length].id;
+    const globalIdx = currentCount + i;
+    const employeeId = employees[globalIdx % employees.length].id;
+    const customerId = customers[globalIdx % customers.length].id;
 
     const qtyMap = {};
-    for (const sku of t.items) qtyMap[sku] = (qtyMap[sku] || 0) + 1;
+    for (const sku of template.items) qtyMap[sku] = (qtyMap[sku] || 0) + 1;
 
     let totalWeight = 0;
     let totalAmount = 0;
@@ -378,21 +441,22 @@ async function seedTransactions() {
     const tx = await prisma.transaction.create({
       data: {
         invoiceNo,
-        type: t.type,
-        status: "COMPLETED",
+        type: template.type,
+        status: Math.random() > 0.15 ? "COMPLETED" : "PENDING",
         employeeId,
         customerId,
         totalWeight,
         totalAmount,
         paidAmount: totalAmount,
-        notes: `Seed ${t.type} #${i + 1}`,
+        notes: `Seed ${template.type} #${globalIdx + 1}`,
         items: { create: createItems },
       },
       include: { items: true },
     });
-    console.log(
-      `  created ${tx.invoiceNo} (${tx.type}) total=${tx.totalAmount} items=${tx.items.length}`,
-    );
+    if (i < 8 || i % 10 === 0)
+      console.log(
+        `  created ${tx.invoiceNo} (${tx.type}) total=${tx.totalAmount} items=${tx.items.length}`,
+      );
   }
   console.log(
     `  transactions: ${await prisma.transaction.count()}, items: ${await prisma.transactionItem.count()}`,

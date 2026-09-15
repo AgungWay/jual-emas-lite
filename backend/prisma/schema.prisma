@@ -89,6 +89,11 @@ model Transaction {
   @@index([status])
   @@index([createdAt])
   @@index([customerId, createdAt])
+  // ANTI N+1: composite untuk JOIN + filter + sort agar Index Scan, bukan Seq Scan
+  @@index([status, createdAt])
+  @@index([type, createdAt])
+  @@index([type, status])
+  @@index([employeeId, createdAt])
 }
 
 model TransactionItem {
